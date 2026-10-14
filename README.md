@@ -1,6 +1,6 @@
 # FairToy
 
-FairToy is a supply-chain traceability application for identifying potential child-labor exposure in toy manufacturing. This repository contains the application foundation, normalized PostgreSQL schema, and Phase 3 transactional CSV import pipeline.
+FairToy is a supply-chain traceability application for identifying potential child-labor exposure in toy manufacturing. This repository contains the application foundation, normalized PostgreSQL schema, transactional CSV import pipeline, and Phase 4 toy catalog/traceability read APIs.
 
 ## Prerequisites
 
@@ -131,6 +131,67 @@ Expected response:
 
 Stop local services with `docker compose down` after stopping the backend and frontend processes.
 
+## Toy catalog and traceability API
+
+Direct backend endpoints (frontend development proxy adds `/api`):
+
+| Read endpoint | Response contract |
+|---|---|
+| `GET /finishers` | `{finishers: [{finisher_id, finisher_name, hq_country}]}` |
+| `GET /toys?finisher_id=...` | `{finisher, toys, total_toys, potentially_affected_toys}` |
+| `GET /toys/detail?finisher_id=...&toy_id=...` | Toy listing fields plus `{finisher, parts}` |
+
+IDs are required query parameters, preserving imported identifiers even when they
+contain `/` or other reserved URL characters. Use a query-string builder (such as
+`URLSearchParams`) to encode values; for example, Finisher `FIN/A` and toy `TOY/1`
+use `/toys/detail?finisher_id=FIN%2FA&toy_id=TOY%2F1`. Missing required parameters
+return `422`. The earlier path-based toy routes are not retained as aliases.
+
+`finisher` contains `finisher_id`, `finisher_name`, and `hq_country`. Each toy listing
+contains `toy_id`, `toy_name`, `retail_price_usd`, `units_per_year`, and
+`exposure_status`. Price and annual volume belong to the selected Finisher; the
+BOM is shared across Finishers listing the same toy. Money is serialized as decimal
+strings (for example, `"19.99"`), not floating-point JSON numbers.
+
+Detail `parts` contain `part_id`, `part_name`, `quantity`, `distinct_supplier_count`,
+`source_uncertainty`, and `sources`. Each source contains:
+
+- `unit_cost_usd` (decimal string).
+- `factory`: `factory_id`, `factory_name`, `address_line`, `city`, `country`.
+  Missing address/city remain JSON `null`.
+- `supplier`: `supplier_id`, `supplier_name`, `hq_country`, `is_flagged`.
+  The flag belongs only to the selected Finisher.
+
+Every listed source is retained, including multiple factories belonging to the
+same supplier and all flagged and unflagged paths. Quantity appears once per BOM
+part and is never multiplied by source count. For parts with more than one distinct
+supplier, `source_uncertainty` is exactly:
+
+> Actual source unknown. This part has multiple listed suppliers. The supplied data does not identify which source was used for this toy.
+
+Otherwise it is `null`; multiple factories belonging to one supplier do not trigger
+this disclosure. Sources represent possible exposure, not confirmed purchases.
+
+`exposure_status` is exactly **Potentially affected** if any source path reaches a
+supplier flagged by the selected Finisher; otherwise **No flagged supplier found**.
+An unflagged alternative does not clear exposure, and absence of flags does not
+prove safety. Statuses are computed live in SQL; no affected column or exposure
+cache is stored. Catalog counts count each listing once, irrespective of path count.
+
+Lists are ordered by IDs (Finishers, toys, parts, then source factory IDs), with no
+pagination. Empty collections return `200` and empty arrays; empty catalogs have
+zero counts. Toys without BOM items return `parts: []`; parts without sources retain
+their quantity and return `sources: []` and `distinct_supplier_count: 0`.
+Unknown Finishers return `404 {"detail":"Finisher not found"}`; unknown toys or toys
+outside the selected catalog return
+`404 {"detail":"Toy not found in Finisher catalog"}`.
+
+Pydantic response contracts are published at <http://localhost:8000/docs> and
+`/openapi.json`. Finisher selection uses one SQL statement; successful catalog and
+detail reads each use two, independent of catalog or trace size. Supplier-specific
+reads and flag mutation endpoints are not implemented yet; integration tests seed
+flags directly in PostgreSQL.
+
 ## Checks
 
 PostgreSQL must be running for backend tests:
@@ -152,9 +213,16 @@ npm run build
 cd ..
 ```
 
-Schema tests run migrations in uniquely named, empty PostgreSQL schemas and roll back afterward. Import tests use separate uniquely named schemas to exercise real commits and concurrent connections, then drop those test schemas. Neither suite migrates or clears application tables. The configured database user needs permission to create schemas (the default Compose user has this permission). A database connection failure fails tests rather than skipping them.
+Schema and catalog API tests run migrations in uniquely named, empty PostgreSQL schemas and roll back afterward. Import tests use separate uniquely named schemas to exercise real commits and concurrent connections, then drop those test schemas. Neither suite migrates or clears application tables. The configured database user needs permission to create schemas (the default Compose user has this permission). A database connection failure fails tests rather than skipping them.
 
 Backend coverage includes empty-schema upgrade and downgrade/re-upgrade, exact columns/types/keys/indexes, invalid foreign keys, duplicate keys, required fields, numeric constraints, nullable factory fields, provenance, and Finisher-scoped flag relationships. CSV mapping tests read the six checked-in files. Import tests additionally load the complete dataset, reconcile every source attribute, and cover validation, normalization, rollback, receipts, key reuse, failed-key retry, concurrent same/different-key imports, and the installed CLI. Minimal valid inputs live in `backend/tests/fixtures/imports/valid/`; the invalid `parts.csv` overlays that set to demonstrate supplier/factory disagreement. Other invalid cases are generated by parameterized tests.
+
+Catalog API integration tests cover shared toy listings/BOMs, zero/one/multiple
+flags, every detail path, Finisher isolation, live seeded-flag changes, distinct
+supplier uncertainty, quantities and affected counts, empty/missing resources,
+response contracts, reserved-character IDs, required query parameters, and fixed
+query counts as catalog size increases. Run them alone
+from `backend` with `pytest tests/test_catalog_api.py`.
 
 ## CSV-to-schema mapping
 
@@ -177,7 +245,7 @@ Copy `.env.example` to `.env`. `DATABASE_URL` configures SQLAlchemy and Alembic.
 
 If port `5432` is already occupied, change `POSTGRES_PORT` and the port in `DATABASE_URL` together. If ports `8000` or `5173` are occupied, stop the conflicting process before following the documented commands.
 
-## Current scope (Phases 1–3)
+## Current scope (Phases 1–4)
 
 Included:
 
@@ -187,11 +255,13 @@ Included:
 - PostgreSQL schema/constraint tests and actual CSV-column reconciliation
 - Atomic local CSV import with validation, normalization, receipts, and concurrency-safe idempotency
 - Full-dataset and minimal-fixture import tests
+- Finisher selection, scoped toy catalog, and complete toy trace read APIs
+- Explicit response contracts and PostgreSQL-backed exposure/query-count integration tests
 - React/TypeScript frontend with TanStack Query
 - Docker Compose PostgreSQL service
 - Backend and frontend smoke tests
 
 Not included until later phases:
 
-- Business and traceability APIs
+- Supplier-specific APIs and flag mutation endpoints
 - Finished catalog, supplier, or flagging screens

@@ -74,7 +74,7 @@ Import the six source CSVs safely and reproducibly in one validated, atomic proc
 - Normalize repeated part IDs into `parts` + `part_sources`, and shared toy IDs into `toys` + `finisher_toys`, rejecting conflicting records while accepting valid repeated IDs.
 - Preserve optional empty factory city/address fields and retain all source attributes.
 - On failure, roll back all published catalog changes and receipt creation.
-- Save a successful receipt with ID, unique key, dataset scope, timestamps, and source/inserted row counts. Reusing a completed key returns the receipt without importing; a failed attempt can be manually retried with its key.
+- Save a successful receipt with ID, unique key, timestamps, and source/inserted row counts. Reusing a completed key returns the receipt without importing; a failed attempt can be manually retried with its key.
 - Enforce concurrency safety for the same key using PostgreSQL uniqueness and transaction-safe handling.
 
 ### Deliverables

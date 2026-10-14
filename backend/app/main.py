@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.catalog_routes import router as catalog_router
 from app.database import check_database_connection, engine
 
 
@@ -21,6 +22,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="FairToy API", version="0.1.0", lifespan=lifespan)
+app.include_router(catalog_router)
 
 
 @app.get("/health", response_model=HealthResponse)
