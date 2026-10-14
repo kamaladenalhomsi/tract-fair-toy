@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useInfiniteQuery } from '@tanstack/react-query'
 import { toyDetailQuery } from '../api/catalog'
 import { ExposureBadge } from './ExposureBadge'
 import { QueryError } from './QueryError'
@@ -11,7 +11,9 @@ type Props = {
 }
 
 export function ToyDetails({ finisherId, toyId, onBack }: Props) {
-  const query = useQuery(toyDetailQuery(finisherId, toyId))
+  const query = useInfiniteQuery(toyDetailQuery(finisherId, toyId))
+  const detail = query.data?.pages[0]
+  const parts = query.data?.pages.flatMap((page) => page.parts) ?? []
   const heading = useRef<HTMLHeadingElement>(null)
 
   useEffect(() => { heading.current?.focus() }, [])
@@ -20,30 +22,31 @@ export function ToyDetails({ finisherId, toyId, onBack }: Props) {
     <section aria-labelledby="toy-heading">
       <button type="button" className="back-button" onClick={onBack}>← Back to toys</button>
       <h2 id="toy-heading" ref={heading} tabIndex={-1}>
-        {query.isSuccess ? query.data.toy_name : 'Toy details'}
+        {detail ? detail.toy_name : 'Toy details'}
       </h2>
       {query.isPending && <p role="status">Loading toy trace…</p>}
-      {query.isError && (
+      {query.isError && !query.isFetchNextPageError && (
         <QueryError
           message="Could not load this toy’s trace. It may no longer be in this Finisher’s catalog. Try again or return to toys."
           retry={() => { void query.refetch() }}
           isFetching={query.isFetching}
         />
       )}
-      {query.isSuccess && (
+      {detail && (!query.isError || query.isFetchNextPageError) && (
         <>
-          <p className="record-id">{query.data.toy_id}</p>
-          <ExposureBadge status={query.data.exposure_status} />
+          <p className="record-id">{detail.toy_id}</p>
+          <ExposureBadge status={detail.exposure_status} />
           <dl className="listing-facts">
-            <div><dt>Retail price (USD)</dt><dd>{query.data.retail_price_usd}</dd></div>
-            <div><dt>Units per year</dt><dd>{query.data.units_per_year.toLocaleString()}</dd></div>
+            <div><dt>Retail price (USD)</dt><dd>{detail.retail_price_usd}</dd></div>
+            <div><dt>Units per year</dt><dd>{detail.units_per_year.toLocaleString()}</dd></div>
           </dl>
           <h3>Bill of materials & traceability</h3>
           <p>All listed sources are possible exposure paths, not proof of an actual purchase.
             An unflagged alternate source does not eliminate possible exposure.</p>
           <p className="muted">Path: Finisher → Toy → Part → Factory → Supplier. Quantities are per toy, not per source.</p>
-          {query.data.parts.length === 0 && <p role="status">No BOM parts recorded for this toy.</p>}
-          {query.data.parts.map((part) => (
+          <p>{detail.total_parts} parts total · {parts.length} loaded</p>
+          {parts.length === 0 && <p role="status">No BOM parts recorded for this toy.</p>}
+          {parts.map((part) => (
             <article className="part-card" key={part.part_id} aria-labelledby={`part-${encodeURIComponent(part.part_id)}`}>
               <header className="part-header">
                 <div>
@@ -86,6 +89,10 @@ export function ToyDetails({ finisherId, toyId, onBack }: Props) {
               </ul>
             </article>
           ))}
+          {query.isFetchNextPageError && <p role="alert">Could not load more parts. Try again.</p>}
+          {query.hasNextPage && <button type="button" disabled={query.isFetching} onClick={() => { void query.fetchNextPage() }}>
+            {query.isFetchingNextPage ? 'Loading more…' : 'Load more'}
+          </button>}
         </>
       )}
     </section>

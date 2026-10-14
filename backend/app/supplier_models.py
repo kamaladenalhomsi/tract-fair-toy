@@ -10,6 +10,7 @@ class SupplierListing(Supplier):
 class SupplierCatalog(BaseModel):
     finisher: Finisher
     suppliers: list[SupplierListing]
+    total_suppliers: int
 
 
 class ConnectedToy(ToyListing):
@@ -20,7 +21,12 @@ class SupplierDetail(BaseModel):
     finisher: Finisher
     supplier: Supplier
     connected_toys_count: int
+    toys: list[ToyListing]
+
+
+class SupplierParts(BaseModel):
     toys: list[ConnectedToy]
+    total_parts: int
 
 
 class SupplierFlag(BaseModel):

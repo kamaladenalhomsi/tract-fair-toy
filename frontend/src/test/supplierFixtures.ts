@@ -1,5 +1,5 @@
 import type { ToyCatalog, ToyDetail } from '../api/catalog'
-import type { SupplierCatalog, SupplierDetail } from '../api/suppliers'
+import type { SupplierCatalog, SupplierDetail, SupplierParts } from '../api/suppliers'
 import { catalogA, catalogB, detailA, detailB, finisherA, finisherB } from './catalogFixtures'
 
 export function json(value: unknown) {
@@ -47,15 +47,16 @@ export function supplierServer() {
     const suppliers = new Map(detail.parts.flatMap((part) => part.sources.map((source) => [
       source.supplier.supplier_id, { ...source.supplier, connected_toys_count: 1 },
     ] as const)))
-    return { finisher: detail.finisher, suppliers: [...suppliers.values()] }
+    return { finisher: detail.finisher, suppliers: [...suppliers.values()], total_suppliers: suppliers.size }
   }
 
-  function supplierDetail(finisherId: string, supplierId: string): SupplierDetail {
+  function supplierDetail(finisherId: string, supplierId: string): SupplierDetail & SupplierParts {
     const toy = toyDetail(finisherId)
     return {
       finisher: toy.finisher,
       supplier: supplierCatalog(finisherId).suppliers.find((supplier) => supplier.supplier_id === supplierId)!,
       connected_toys_count: 1,
+      total_parts: toy.parts.filter((part) => part.sources.some((source) => source.supplier.supplier_id === supplierId)).length,
       toys: [{
         ...toy,
         parts: toy.parts.map((part) => ({
@@ -75,6 +76,7 @@ export function supplierServer() {
       case '/api/toys/detail': return json(toyDetail(finisherId))
       case '/api/suppliers': return json(supplierCatalog(finisherId))
       case '/api/suppliers/detail': return json(supplierDetail(finisherId, supplierId))
+      case '/api/suppliers/parts': return json(supplierDetail(finisherId, supplierId))
       case '/api/suppliers/flag': {
         if (init?.method === 'PUT') flags[finisherId].add(supplierId)
         else if (init?.method === 'DELETE') flags[finisherId].delete(supplierId)

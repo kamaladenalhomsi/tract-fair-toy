@@ -1,4 +1,4 @@
-import { queryOptions } from '@tanstack/react-query'
+import { infiniteQueryOptions, queryOptions } from '@tanstack/react-query'
 
 export type Finisher = {
   finisher_id: string
@@ -52,6 +52,7 @@ export type BomPart = {
 export type ToyDetail = ToyListing & {
   finisher: Finisher
   parts: BomPart[]
+  total_parts: number
 }
 
 async function get<T>(path: string, signal: AbortSignal): Promise<T> {
@@ -67,16 +68,19 @@ export const finishersQuery = queryOptions({
   queryFn: ({ signal }) => get<{ finishers: Finisher[] }>('finishers', signal),
 })
 
-export const toysQuery = (finisherId: string) => queryOptions({
-  queryKey: ['finishers', finisherId, 'toys'],
+export const toysQuery = (finisherId: string, page = 1) => queryOptions({
+  queryKey: ['finishers', finisherId, 'toys', 'list', page],
   queryFn: ({ signal }) => get<ToyCatalog>(
-    `toys?${new URLSearchParams({ finisher_id: finisherId })}`, signal,
+    `toys?${new URLSearchParams({ finisher_id: finisherId })}${page === 1 ? '' : `&page=${page}`}`, signal,
   ),
 })
 
-export const toyDetailQuery = (finisherId: string, toyId: string) => queryOptions({
-  queryKey: ['finishers', finisherId, 'toys', toyId],
-  queryFn: ({ signal }) => get<ToyDetail>(
-    `toys/detail?${new URLSearchParams({ finisher_id: finisherId, toy_id: toyId })}`, signal,
+export const toyDetailQuery = (finisherId: string, toyId: string) => infiniteQueryOptions({
+  queryKey: ['finishers', finisherId, 'toys', toyId, 'parts'],
+  initialPageParam: 0,
+  queryFn: ({ signal, pageParam }) => get<ToyDetail>(
+    `toys/detail?${new URLSearchParams({ finisher_id: finisherId, toy_id: toyId })}${pageParam === 0 ? '' : `&offset=${pageParam}`}`, signal,
   ),
+  getNextPageParam: (lastPage, _pages, offset) =>
+    offset + lastPage.parts.length < lastPage.total_parts ? offset + lastPage.parts.length : undefined,
 })

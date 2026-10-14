@@ -74,7 +74,7 @@ describe('Supplier discovery and connection preview', () => {
     expect(screen.getByRole('button', { name: 'Flag' })).toBeEnabled()
     expect(screen.getByText(/distinct connected toys —/)).toHaveTextContent('1 distinct connected toys')
     expect(screen.getByText(/distinct connected toys —/)).toHaveTextContent('not newly affected toys')
-    expect(screen.getAllByRole('article')).toHaveLength(1)
+    expect(await screen.findAllByRole('article')).toHaveLength(1)
     expect(screen.getByRole('article', { name: 'Shared train' })).toBeInTheDocument()
     expect(screen.getAllByRole('listitem')).toHaveLength(3)
     expect(screen.getAllByText(/Quantity per toy:/).map((item) => item.textContent)).toEqual([
@@ -104,7 +104,7 @@ describe('Supplier discovery and connection preview', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Loading suppliers…')
     await act(async () => { pending.resolve(new Response(null, { status: 503 })) })
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not load this Finisher’s suppliers')
-    overrides.set(listUrl(), () => json({ finisher: server.supplierDetail('FIN-A', 'SUP-3').finisher, suppliers: [] }))
+    overrides.set(listUrl(), () => json({ finisher: server.supplierDetail('FIN-A', 'SUP-3').finisher, suppliers: [], total_suppliers: 0 }))
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
     expect(await screen.findByText(/No suppliers connected/)).toBeInTheDocument()
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
@@ -133,10 +133,10 @@ describe('Supplier discovery and connection preview', () => {
 describe('Flag mutations and query invalidation', () => {
   it('waits for server success, invalidates only A’s cached data, and refreshes list, counts, and toy traces', async () => {
     await Promise.all([
-      client.prefetchQuery(toyDetailQuery('FIN-A', 'TOY-SHARED')),
+      client.prefetchInfiniteQuery(toyDetailQuery('FIN-A', 'TOY-SHARED')),
       client.prefetchQuery(supplierDetailQuery('FIN-A', 'SUP-1')),
       client.prefetchQuery(toysQuery('FIN-B')),
-      client.prefetchQuery(toyDetailQuery('FIN-B', 'TOY-SHARED')),
+      client.prefetchInfiniteQuery(toyDetailQuery('FIN-B', 'TOY-SHARED')),
       client.prefetchQuery(suppliersQuery('FIN-B')),
       client.prefetchQuery(supplierDetailQuery('FIN-B', 'SUP-3')),
     ])
@@ -228,7 +228,7 @@ describe('Flag mutations and query invalidation', () => {
 
   it('unflags one supplier without clearing exposure or another flagged path', async () => {
     server.flags['FIN-A'].add('SUP-1').add('SUP-2')
-    await client.prefetchQuery(toyDetailQuery('FIN-A', 'TOY-SHARED'))
+    await client.prefetchInfiniteQuery(toyDetailQuery('FIN-A', 'TOY-SHARED'))
     await startSupplier('SUP-1')
     fireEvent.click(screen.getByRole('button', { name: 'Unflag' }))
     expect(await screen.findByText('Supplier unflagged successfully for Finisher FIN-A.')).toBeInTheDocument()

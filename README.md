@@ -119,7 +119,7 @@ npm run dev
 
 Open <http://localhost:5173> and select a Finisher. The **Toys** tab shows that Finisher’s catalog and exposure statuses. Select a toy to inspect its BOM quantities and every factory/supplier path, including flagged paths and multi-source uncertainty. Use **Back to toys** to return, or **Switch Finisher** to change organizations and reset to the new catalog. Selection is not persisted across page reloads.
 
-The **Suppliers** tab is a placeholder until Phase 7; supplier browsing and flag controls are not available in the UI yet. “No flagged supplier found” does not mean verified safe. Import catalog data first if no Finishers are available.
+The **Suppliers** tab lists connected suppliers and provides Flag/Unflag actions both in table rows and supplier details. Toy and supplier tables show 10 rows per page. Toy details load 10 parts initially, with **Load more** appending 10; parts connected to flagged suppliers appear first. Supplier details show a paginated connected-toys table and an independent **Load more** parts section, loading 10 toy–part connections at a time. Summary counts always describe all matching records, never just the current page. “No flagged supplier found” does not mean verified safe. Import catalog data first if no Finishers are available.
 
 The backend health endpoint remains available directly:
 
@@ -143,7 +143,7 @@ Direct backend endpoints (frontend development proxy adds `/api`):
 |---|---|
 | `GET /finishers` | `{finishers: [{finisher_id, finisher_name, hq_country}]}` |
 | `GET /toys?finisher_id=...` | `{finisher, toys, total_toys, potentially_affected_toys}` |
-| `GET /toys/detail?finisher_id=...&toy_id=...` | Toy listing fields plus `{finisher, parts}` |
+| `GET /toys/detail?finisher_id=...&toy_id=...` | Toy listing fields plus `{finisher, parts, total_parts}` |
 
 IDs are required query parameters, preserving imported identifiers even when they
 contain `/` or other reserved URL characters. Use a query-string builder (such as
@@ -182,8 +182,16 @@ An unflagged alternative does not clear exposure, and absence of flags does not
 prove safety. Statuses are computed live in SQL; no affected column or exposure
 cache is stored. Catalog counts count each listing once, irrespective of path count.
 
-Lists are ordered by IDs (Finishers, toys, parts, then source factory IDs), with no
-pagination. Empty collections return `200` and empty arrays; empty catalogs have
+Toy lists accept `page` (default 1, minimum 1) and `page_size` (default 10, range
+1–100). Toy detail accepts `offset` (default 0, minimum 0) and `limit` (default 10,
+range 1–100), measured in whole BOM parts. Each loaded part includes all its sources.
+`total_toys`, `potentially_affected_toys`, and `total_parts` always describe all matching
+records, including when a requested page is empty. Toy exposure considers the entire
+BOM, not just loaded parts. Parts with any supplier flagged by the selected Finisher
+sort first, then by part ID; sources sort by factory ID. Other lists sort by ID.
+Invalid pagination parameters return `422`.
+
+Empty collections return `200` and empty arrays; empty catalogs have
 zero counts. Toys without BOM items return `parts: []`; parts without sources retain
 their quantity and return `sources: []` and `distinct_supplier_count: 0`.
 Unknown Finishers return `404 {"detail":"Finisher not found"}`; unknown toys or toys
@@ -196,14 +204,15 @@ detail reads each use two, independent of catalog or trace size.
 
 ## Supplier management API
 
-All endpoints require `finisher_id`; detail and mutations also require
+All endpoints require `finisher_id`; detail, parts, and mutations also require
 `supplier_id`. IDs are exact query parameters, encoded like the toy API above.
 Mutations have no request body.
 
 | Endpoint | Response contract (`200`) |
 |---|---|
-| `GET /suppliers?finisher_id=...` | `{finisher, suppliers}` |
+| `GET /suppliers?finisher_id=...` | `{finisher, suppliers, total_suppliers}` |
 | `GET /suppliers/detail?finisher_id=...&supplier_id=...` | `{finisher, supplier, connected_toys_count, toys}` |
+| `GET /suppliers/parts?finisher_id=...&supplier_id=...` | `{toys: [toy listing fields plus parts], total_parts}` |
 | `PUT /suppliers/flag?finisher_id=...&supplier_id=...` | `{finisher_id, supplier_id, is_flagged: true}` |
 | `DELETE /suppliers/flag?finisher_id=...&supplier_id=...` | `{finisher_id, supplier_id, is_flagged: false}` |
 
@@ -216,8 +225,16 @@ catalogs return `suppliers: []`.
 Detail `supplier` contains the same identity and flag fields, with the count at
 the response's top level. `toys` contains each distinct connected toy once,
 **before or after flagging**. Each toy contains the toy listing fields described
-above, including Finisher-specific price/volume and live `exposure_status`, plus
-`parts`. Parts use the toy detail contract, but include only parts and factory
+above, including Finisher-specific price/volume and live `exposure_status`.
+Supplier lists and connected-toy detail lists accept `page` and `page_size`, with
+the same defaults and limits as toy lists.
+
+The separate `/suppliers/parts` endpoint accepts `offset` and `limit`, with the same
+defaults and limits as toy detail. Its pagination unit is a **toy–part connection**:
+10 entries may contain the same part used by different toys, each with its own BOM
+quantity. Entries are grouped by toy in the response; a toy can span multiple pages.
+`total_parts` counts all matching toy–part connections. Parts use the toy detail
+contract, but include only parts and factory
 sources connecting that toy to the selected supplier. Every matching factory
 path is retained; BOM quantity appears once per part, not once per source.
 `distinct_supplier_count` and `source_uncertainty` still consider **all** sources
@@ -226,9 +243,11 @@ also considers all supplier paths, not just the selected supplier's paths.
 
 Counts mean **connected toys**, not **newly affected toys**. No newly-affected
 preview is calculated. Lists are ordered by supplier ID; detail toys, parts, and
-sources are ordered by toy, part, and factory IDs respectively. No pagination is
-applied. Money remains decimal strings, and missing factory city/address remain
-`null`. Supplier list reads use two SQL statements, detail reads three, and
+sources are ordered by toy, part, and factory IDs respectively. All summary counts
+(`total_suppliers`, `connected_toys_count`, `total_parts`) cover all matching records,
+independent of pagination. Money remains decimal strings, and missing factory
+city/address remain `null`. Supplier list reads use two SQL statements, detail and
+parts reads three each, and
 successful mutations three plus transaction commit, independent of result size.
 
 `PUT` inserts the Finisher–supplier flag if absent. Repeated flagging succeeds
@@ -242,7 +261,7 @@ flags are never changed. Concurrent-edit conflict resolution is not provided.
 Missing parameters return `422`. Unknown Finishers return
 `404 {"detail":"Finisher not found"}`. Missing suppliers **or suppliers outside the
 selected Finisher's catalog** return
-`404 {"detail":"Supplier not found in Finisher catalog"}` for both detail and
+`404 {"detail":"Supplier not found in Finisher catalog"}` for detail, parts, and
 mutations. Database errors during mutation transactions, including commit errors,
 return `503 {"detail":"Supplier flag update failed"}` rather than success. Other
 server/connection failures may return `500`; callers must treat non-2xx responses
@@ -298,6 +317,12 @@ PostgreSQL statement and deferred-commit failures verify rollback and non-succes
 responses. A fresh application subprocess verifies persisted flags and committed
 unflags across application instances. Run them with
 `pytest tests/test_supplier_api.py`.
+
+Pagination integration tests cover first/middle/last/empty pages, parameter limits,
+global summary counts, flagged-first part ordering, complete sources, source
+uncertainty, and fixed query counts: `pytest tests/test_pagination.py`.
+Frontend tests include table navigation, independent supplier table/parts paging,
+Load more failures/retries, and row-level flag mutation feedback.
 
 ## CSV-to-schema mapping
 

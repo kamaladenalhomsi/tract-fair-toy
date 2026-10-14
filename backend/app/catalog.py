@@ -44,9 +44,13 @@ def get_finisher(connection: Connection, finisher_id: str) -> Finisher | None:
     return Finisher(**row) if row is not None else None
 
 
-def list_toys(connection: Connection, finisher: Finisher) -> ToyCatalog:
-    rows = connection.execute(
-        text("""
+def list_toys(
+    connection: Connection, finisher: Finisher, page: int = 1, page_size: int = 10
+) -> ToyCatalog:
+    rows = (
+        connection.execute(
+            text("""
+        WITH listings AS (
         SELECT t.toy_id, t.toy_name, ft.retail_price_usd, ft.units_per_year,
                CASE WHEN EXISTS (
                    SELECT 1
@@ -62,36 +66,73 @@ def list_toys(connection: Connection, finisher: Finisher) -> ToyCatalog:
         FROM finisher_toys ft
         JOIN toys t ON t.toy_id = ft.toy_id
         WHERE ft.finisher_id = :finisher_id
-        ORDER BY t.toy_id
+        ), summary AS (
+            SELECT count(*) AS total_toys,
+                   count(*) FILTER (WHERE exposure_status = 'Potentially affected')
+                       AS potentially_affected_toys
+            FROM listings
+        ), page AS (
+            SELECT * FROM listings ORDER BY toy_id LIMIT :limit OFFSET :offset
+        )
+        SELECT summary.*, page.* FROM summary LEFT JOIN page ON true ORDER BY page.toy_id
     """),
-        {"finisher_id": finisher.finisher_id},
-    ).mappings()
-    toys = [ToyListing(**row) for row in rows]
+            {
+                "finisher_id": finisher.finisher_id,
+                "limit": page_size,
+                "offset": (page - 1) * page_size,
+            },
+        )
+        .mappings()
+        .all()
+    )
+    toys = [ToyListing(**row) for row in rows if row["toy_id"] is not None]
     return ToyCatalog(
         finisher=finisher,
         toys=toys,
-        total_toys=len(toys),
-        potentially_affected_toys=sum(
-            toy.exposure_status == "Potentially affected" for toy in toys
-        ),
+        total_toys=rows[0]["total_toys"],
+        potentially_affected_toys=rows[0]["potentially_affected_toys"],
     )
 
 
-def get_toy(connection: Connection, finisher: Finisher, toy_id: str) -> ToyDetail | None:
+def get_toy(
+    connection: Connection,
+    finisher: Finisher,
+    toy_id: str,
+    offset: int = 0,
+    limit: int = 10,
+) -> ToyDetail | None:
     rows = (
         connection.execute(
             text("""
+        WITH ranked_parts AS (
+            SELECT b.part_id, b.quantity,
+                   EXISTS (
+                       SELECT 1 FROM part_sources ps
+                       JOIN factories f ON f.factory_id = ps.factory_id
+                       JOIN finisher_supplier_flags flags ON flags.supplier_id = f.supplier_id
+                       WHERE ps.part_id = b.part_id AND flags.finisher_id = :finisher_id
+                   ) AS is_flagged
+            FROM bom_items b WHERE b.toy_id = :toy_id
+        ), summary AS (
+            SELECT count(*) AS total_parts, coalesce(bool_or(is_flagged), false) AS affected
+            FROM ranked_parts
+        ), page AS (
+            SELECT * FROM ranked_parts
+            ORDER BY is_flagged DESC, part_id LIMIT :limit OFFSET :offset
+        )
         SELECT t.toy_id, t.toy_name, ft.retail_price_usd, ft.units_per_year,
+               summary.total_parts,
                b.part_id, p.part_name, b.quantity, ps.unit_cost_usd,
                f.factory_id, f.factory_name, f.address_line, f.city, f.country,
                s.supplier_id, s.supplier_name, s.hq_country,
                flags.supplier_id IS NOT NULL AS is_flagged,
-               CASE WHEN bool_or(flags.supplier_id IS NOT NULL) OVER ()
+               CASE WHEN summary.affected
                     THEN 'Potentially affected'
                     ELSE 'No flagged supplier found' END AS exposure_status
         FROM finisher_toys ft
         JOIN toys t ON t.toy_id = ft.toy_id
-        LEFT JOIN bom_items b ON b.toy_id = t.toy_id
+        CROSS JOIN summary
+        LEFT JOIN page b ON true
         LEFT JOIN parts p ON p.part_id = b.part_id
         LEFT JOIN part_sources ps ON ps.part_id = b.part_id
         LEFT JOIN factories f ON f.factory_id = ps.factory_id
@@ -99,9 +140,14 @@ def get_toy(connection: Connection, finisher: Finisher, toy_id: str) -> ToyDetai
         LEFT JOIN finisher_supplier_flags flags
           ON flags.supplier_id = s.supplier_id AND flags.finisher_id = ft.finisher_id
         WHERE ft.finisher_id = :finisher_id AND ft.toy_id = :toy_id
-        ORDER BY b.part_id, f.factory_id
+        ORDER BY b.is_flagged DESC, b.part_id, f.factory_id
     """),
-            {"finisher_id": finisher.finisher_id, "toy_id": toy_id},
+            {
+                "finisher_id": finisher.finisher_id,
+                "toy_id": toy_id,
+                "offset": offset,
+                "limit": limit,
+            },
         )
         .mappings()
         .all()
@@ -141,4 +187,5 @@ def get_toy(connection: Connection, finisher: Finisher, toy_id: str) -> ToyDetai
         **ToyListing(**rows[0]).model_dump(),
         finisher=finisher,
         parts=list(parts.values()),
+        total_parts=rows[0]["total_parts"],
     )
