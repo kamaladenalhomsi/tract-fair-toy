@@ -1,0 +1,21 @@
+.DS_Store
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.venv/
+backend/.venv/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+frontend/.npm-cache/
+
+# Editors
+.idea/
+.vscode/
