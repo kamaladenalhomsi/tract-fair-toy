@@ -3,9 +3,17 @@
 }
 
 .app-shell {
-  width: min(720px, calc(100% - 2rem));
+  width: min(1120px, calc(100% - 2rem));
   margin: 0 auto;
-  padding: 5rem 0;
+  padding: 2.5rem 0;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1.5rem 3rem;
 }
 
 .eyebrow {
@@ -19,32 +27,276 @@
 
 h1 {
   margin: 0;
-  font-size: clamp(2.5rem, 8vw, 4.5rem);
+  font-size: clamp(2.5rem, 8vw, 4rem);
   letter-spacing: -0.05em;
 }
 
-.status-card {
-  margin-top: 3rem;
-  padding: 1.5rem;
-  border: 1px solid #ccd8d0;
-  border-radius: 0.75rem;
-  background: #ffffff;
-  box-shadow: 0 1rem 3rem rgb(27 58 42 / 8%);
+h2, h3, h4 {
+  line-height: 1.3;
 }
 
-.status-card h2 {
+h2 {
   margin-top: 0;
-  font-size: 1.125rem;
 }
 
-.status-card p {
+.finisher-picker {
+  flex: 0 1 440px;
+  min-width: 0;
+}
+
+.finisher-picker label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+
+select {
+  width: 100%;
+  padding: 0.65rem;
+  border: 1px solid #718578;
+  border-radius: 0.35rem;
+  background: #fff;
+  color: inherit;
+}
+
+.selected-finisher {
   margin-bottom: 0;
 }
 
-.status-ok {
-  color: #176b42;
+.record-id {
+  display: block;
+  color: #53635a;
+  font-size: 0.85rem;
+  font-weight: 400;
+  overflow-wrap: anywhere;
 }
 
-.status-error {
-  color: #a12a2a;
+.scope-notice {
+  margin: 2rem 0;
+  padding: 1rem 1.25rem;
+  border-left: 3px solid #6e8678;
+  background: #e3ece6;
+}
+
+.workspace-tabs {
+  display: flex;
+  gap: 0.5rem;
+}
+
+button {
+  padding: 0.55rem 0.9rem;
+  border: 1px solid #718578;
+  border-radius: 0.35rem;
+  background: #fff;
+  color: #254b37;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: #edf3ef;
+}
+
+button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+:focus-visible {
+  outline: 3px solid #265eaa;
+  outline-offset: 3px;
+}
+
+.workspace-tabs button {
+  border-radius: 0.5rem 0.5rem 0 0;
+  padding: 0.85rem 1.5rem;
+}
+
+.workspace-tabs [aria-selected="true"] {
+  background: #254b37;
+  color: #fff;
+  border-color: #254b37;
+}
+
+.workspace-panel {
+  padding: clamp(1rem, 3vw, 2rem);
+  border: 1px solid #ccd8d0;
+  border-radius: 0 0.5rem 0.5rem;
+  background: #fff;
+  box-shadow: 0 1rem 3rem rgb(27 58 42 / 6%);
+}
+
+.muted {
+  color: #53635a;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+th, td {
+  padding: 1rem 0.75rem;
+  border-bottom: 1px solid #dce4de;
+  vertical-align: top;
+}
+
+thead th {
+  background: #f3f6f4;
+  font-size: 0.85rem;
+}
+
+.text-button {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  font-weight: 600;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.text-button .record-id {
+  margin-top: 0.25rem;
+}
+
+.exposure-badge {
+  display: inline-block;
+  border: 1px solid;
+  border-radius: 0.3rem;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.affected {
+  color: #8a291c;
+  background: #fff0e9;
+  border-color: #dba491;
+}
+
+.unflagged {
+  color: #435367;
+  background: #f1f4f8;
+  border-color: #c6cfdb;
+}
+
+.back-button {
+  margin-bottom: 1.5rem;
+}
+
+.listing-facts, .source-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 2.5rem;
+}
+
+.listing-facts dt, .source-facts dt {
+  color: #53635a;
+  font-size: 0.85rem;
+  margin-bottom: 0.25rem;
+}
+
+dd {
+  margin-left: 0;
+}
+
+.part-card {
+  margin-top: 1.5rem;
+  padding: 1.25rem;
+  border: 1px solid #ccd8d0;
+  border-radius: 0.5rem;
+}
+
+.part-header {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+}
+
+.part-header h4, .quantity {
+  margin: 0;
+}
+
+.uncertainty {
+  padding: 0.75rem 1rem;
+  border-left: 3px solid #a77b20;
+  background: #fff7df;
+  color: #644907;
+}
+
+.source-list {
+  list-style: none;
+  padding: 0;
+  margin-bottom: 0;
+}
+
+.trace-path {
+  margin-top: 1rem;
+  padding: 1rem;
+  border-left: 4px solid #b8c4bd;
+  background: #f5f7f6;
+}
+
+.flagged-path {
+  border-color: #b4422b;
+  background: #fff3ee;
+}
+
+.path-status {
+  margin: 0;
+  font-weight: 600;
+}
+
+.flagged-path .path-status {
+  color: #8a291c;
+}
+
+.path-chain {
+  margin-bottom: 0;
+  font-family: ui-monospace, monospace;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.error-state {
+  padding: 1rem;
+  border: 1px solid #dba491;
+  border-radius: 0.35rem;
+  color: #8a291c;
+  background: #fff3ee;
+}
+
+.error-state p {
+  margin-top: 0;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .app-shell {
+    padding-top: 1.5rem;
+  }
+
+  .finisher-picker {
+    flex-basis: 100%;
+  }
+
+  .part-card {
+    padding: 0.85rem;
+  }
 }
