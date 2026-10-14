@@ -49,6 +49,37 @@ def migrated_database(database_engine, alembic_config):
         yield connection
 
 
+@pytest.fixture(scope="module")
+def committed_import_database(database_engine):
+    schema = f"test_import_{uuid4().hex}"
+    engine = create_engine(
+        database_engine.url,
+        connect_args={"options": f"-csearch_path={schema}", "application_name": schema},
+    )
+    try:
+        with database_engine.begin() as connection:
+            connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+        config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+        with engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.upgrade(config, "head")
+        yield engine
+    finally:
+        engine.dispose()
+        with database_engine.begin() as connection:
+            connection.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+
+
+@pytest.fixture
+def import_engine(committed_import_database):
+    engine = committed_import_database
+    try:
+        yield engine
+    finally:
+        with engine.begin() as connection:
+            connection.execute(text("TRUNCATE import_jobs, finisher_supplier_flags CASCADE"))
+
+
 @pytest.fixture
 def db(migrated_database):
     with migrated_database.begin_nested() as transaction:

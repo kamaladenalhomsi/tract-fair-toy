@@ -16,6 +16,9 @@ dependencies = [
     "uvicorn[standard]>=0.32,<1",
 ]
 
+[project.scripts]
+fairtoy-import = "app.import_cli:main"
+
 [project.optional-dependencies]
 dev = [
     "httpx>=0.28,<1",
