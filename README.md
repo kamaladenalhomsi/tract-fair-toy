@@ -54,8 +54,7 @@ run `python -m app.import_cli` with the same arguments.
 
 Success prints a JSON receipt to stdout and exits `0`. The receipt includes `id`,
 `idempotency_key`, `started_at`, `completed_at`, and `row_counts` containing `source`
-(counts by CSV filename) and `inserted` (counts by normalized table). There is no
-`dataset_scope` field or CLI option. The supplied dataset produces **400 parts,
+(counts by CSV filename) and `inserted` (counts by normalized table). The supplied dataset produces **400 parts,
 422 part sources, 300 toys, 305 Finisher listings, and 10,463 BOM items**.
 
 ### Validation and retry behavior
@@ -170,7 +169,7 @@ Backend coverage includes empty-schema upgrade and downgrade/re-upgrade, exact c
 
 `parts.csv.supplier_id` is redundant: the supplier is obtained through `factories.supplier_id`. The importer verifies agreement and rejects conflicting input before publication.
 
-All eight imported catalog tables retain `created_by_import_job_id`. Application-managed flags instead store `flagged_at`. Import receipts follow `specs/data-model.md` without a `dataset_scope` column. Exposure and global supplier flags are not stored.
+All eight imported catalog tables retain `created_by_import_job_id`. Application-managed flags instead store `flagged_at`.Exposure and global supplier flags are not stored.
 
 ## Configuration
 

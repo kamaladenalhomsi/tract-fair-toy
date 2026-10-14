@@ -39,7 +39,6 @@ def test_cli_receipt_and_repeat(import_engine):
     assert first.returncode == 0, first.stderr
     receipt = json.loads(first.stdout)
     assert receipt["row_counts"]["inserted"]["parts"] == 2
-    assert "dataset_scope" not in receipt
     second = run_cli(import_engine, invalid=True)
     assert second.returncode == 0, second.stderr
     assert json.loads(second.stdout) == receipt

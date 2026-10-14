@@ -76,7 +76,6 @@ Import the six source CSVs safely and reproducibly in one validated, atomic proc
 - On failure, roll back all published catalog changes and receipt creation.
 - Save a successful receipt with ID, unique key, dataset scope, timestamps, and source/inserted row counts. Reusing a completed key returns the receipt without importing; a failed attempt can be manually retried with its key.
 - Enforce concurrency safety for the same key using PostgreSQL uniqueness and transaction-safe handling.
-- Do not invent a unique-per-`dataset_scope` rule: it is absent from the final spec.
 
 ### Deliverables
 - Working import command, staging/normalization logic, actionable errors, valid/invalid fixtures, and automated import tests.
