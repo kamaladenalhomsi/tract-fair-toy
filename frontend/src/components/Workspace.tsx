@@ -2,18 +2,22 @@ import { useRef, useState } from 'react'
 import type { Finisher } from '../api/catalog'
 import { ToysList } from './ToysList'
 import { ToyDetails } from './ToyDetails'
+import { SuppliersList } from './SuppliersList'
+import { SupplierDetails } from './SupplierDetails'
 
 type Tab = 'toys' | 'suppliers'
 
 export function Workspace({ finisher }: { finisher: Finisher }) {
   const [tab, setTab] = useState<Tab>('toys')
   const [toyId, setToyId] = useState<string | null>(null)
+  const [supplierId, setSupplierId] = useState<string | null>(null)
   const toysTab = useRef<HTMLButtonElement>(null)
   const suppliersTab = useRef<HTMLButtonElement>(null)
 
   function selectTab(next: Tab) {
     setTab(next)
     setToyId(null)
+    setSupplierId(null)
   }
 
   return (
@@ -61,14 +65,19 @@ export function Workspace({ finisher }: { finisher: Finisher }) {
       </div>
       <div id="workspace-panel" className="workspace-panel" role="tabpanel" aria-labelledby={`${tab}-tab`}>
         {tab === 'suppliers' ? (
-          <section aria-labelledby="suppliers-heading">
-            <h2 id="suppliers-heading">Suppliers</h2>
-            <p>Supplier browsing and flag controls will be available in Phase 7.</p>
-            <button onClick={() => {
-              selectTab('toys')
-              toysTab.current?.focus()
-            }}>Return to toys</button>
-          </section>
+          supplierId === null ? (
+            <SuppliersList finisherId={finisher.finisher_id} onSelect={setSupplierId} />
+          ) : (
+            <SupplierDetails
+              key={supplierId}
+              finisherId={finisher.finisher_id}
+              supplierId={supplierId}
+              onBack={() => {
+                setSupplierId(null)
+                suppliersTab.current?.focus()
+              }}
+            />
+          )
         ) : toyId === null ? (
           <ToysList finisherId={finisher.finisher_id} onSelect={setToyId} />
         ) : (

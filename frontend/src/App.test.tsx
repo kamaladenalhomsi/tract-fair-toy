@@ -46,6 +46,7 @@ beforeEach(() => {
   handlers.set(toysBUrl, () => json(catalogB))
   handlers.set(detailAUrl, () => json(detailA))
   handlers.set(detailBUrl, () => json(detailB))
+  handlers.set('/api/suppliers?finisher_id=FIN-A', () => json({ finisher: finisherA, suppliers: [] }))
   fetchMock.mockReset()
   fetchMock.mockImplementation(async (url) => {
     const handler = handlers.get(url)
@@ -97,19 +98,17 @@ describe('Finisher selection and workspace', () => {
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
   })
 
-  it('offers only a Suppliers placeholder, supports keyboard tabs, and resets to Toys on switching', async () => {
+  it('opens Suppliers with keyboard tabs and resets to Toys on switching', async () => {
     renderApp()
     await selectFinisher()
     const toysTab = screen.getByRole('tab', { name: 'Toys' })
     toysTab.focus()
     fireEvent.keyDown(toysTab, { key: 'ArrowRight' })
     expect(screen.getByRole('tab', { name: 'Suppliers' })).toHaveFocus()
-    expect(screen.getByRole('tabpanel', { name: 'Suppliers' })).toHaveTextContent('available in Phase 7')
-    expect(fetchMock.mock.calls.some(([url]) => url.includes('/suppliers'))).toBe(false)
+    expect(await screen.findByText(/No suppliers connected to this Finisher’s toys/)).toBeInTheDocument()
+    expect(screen.getByRole('tabpanel', { name: 'Suppliers' })).toBeInTheDocument()
 
-    const returnButton = screen.getByRole('button', { name: 'Return to toys' })
-    returnButton.focus()
-    fireEvent.click(returnButton)
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'Suppliers' }), { key: 'Home' })
     expect(screen.getByRole('tab', { name: 'Toys' })).toHaveFocus()
     expect(screen.getByRole('tab', { name: 'Toys' })).toHaveAttribute('aria-selected', 'true')
     fireEvent.click(screen.getByRole('tab', { name: 'Suppliers' }))
