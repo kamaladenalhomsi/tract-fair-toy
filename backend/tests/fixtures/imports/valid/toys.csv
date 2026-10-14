@@ -1,0 +1,4 @@
+toy_id,toy_name,finisher_id,retail_price_usd,units_per_year
+TOY-A,Car,FIN-A,10.00,100
+TOY-A,Car,FIN-B,12.00,200
+TOY-B,Truck,FIN-A,0,0

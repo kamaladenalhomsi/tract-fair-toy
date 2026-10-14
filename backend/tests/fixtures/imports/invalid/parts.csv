@@ -1,0 +1,2 @@
+part_id,part_name,supplier_id,factory_id,unit_cost_usd
+PART-A,Wheel,SUP-B,FAC-A,0.50
