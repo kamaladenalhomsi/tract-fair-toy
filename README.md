@@ -1,6 +1,6 @@
 # FairToy
 
-FairToy is a supply-chain traceability application for identifying potential child-labor exposure in toy manufacturing. This repository contains the application foundation, normalized PostgreSQL schema, transactional CSV import pipeline, toy catalog/traceability APIs, and Phase 5 supplier management APIs.
+FairToy is a supply-chain traceability application for identifying potential child-labor exposure in toy manufacturing. This repository contains the application foundation, normalized PostgreSQL schema, transactional CSV import pipeline, toy catalog/traceability APIs, supplier management APIs, and the Phase 6 Finisher selection and Toys UI.
 
 ## Prerequisites
 
@@ -117,7 +117,11 @@ cd frontend
 npm run dev
 ```
 
-Open <http://localhost:5173>. The application shell reports whether the backend and PostgreSQL are available. The backend health endpoint is also available directly:
+Open <http://localhost:5173> and select a Finisher. The **Toys** tab shows that Finisher’s catalog and exposure statuses. Select a toy to inspect its BOM quantities and every factory/supplier path, including flagged paths and multi-source uncertainty. Use **Back to toys** to return, or **Switch Finisher** to change organizations and reset to the new catalog. Selection is not persisted across page reloads.
+
+The **Suppliers** tab is a placeholder until Phase 7; supplier browsing and flag controls are not available in the UI yet. “No flagged supplier found” does not mean verified safe. Import catalog data first if no Finishers are available.
+
+The backend health endpoint remains available directly:
 
 ```bash
 curl http://localhost:8000/health
@@ -316,7 +320,7 @@ Copy `.env.example` to `.env`. `DATABASE_URL` configures SQLAlchemy and Alembic.
 
 If port `5432` is already occupied, change `POSTGRES_PORT` and the port in `DATABASE_URL` together. If ports `8000` or `5173` are occupied, stop the conflicting process before following the documented commands.
 
-## Current scope (Phases 1–5)
+## Current scope (Phases 1–6)
 
 Included:
 
@@ -329,10 +333,13 @@ Included:
 - Finisher selection, scoped toy catalog, and complete toy trace read APIs
 - Finisher-scoped supplier list/detail and persistent, idempotent flag/unflag APIs
 - Explicit response contracts and PostgreSQL-backed exposure/query-count/mutation integration tests
-- React/TypeScript frontend with TanStack Query
+- React/TypeScript frontend with mandatory Finisher selection, switching, Toys catalog/detail, and a Suppliers placeholder
+- TanStack Query with Finisher-scoped catalog/trace keys and request cancellation
+- Complete BOM/source paths, flagged-path highlighting, source uncertainty, and loading/error/empty states
 - Docker Compose PostgreSQL service
-- Backend and frontend smoke tests
+- Backend tests and frontend UI tests covering selection, navigation, tracing, error recovery, and cross-Finisher isolation
 
 Not included until later phases:
 
-- Finished catalog, supplier, or flagging screens
+- Functional supplier browsing and flag/unflag screens (Phase 7)
+- Full end-to-end verification and final documentation (Phase 8)
