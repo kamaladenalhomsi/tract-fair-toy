@@ -219,7 +219,7 @@ dd {
   gap: 0.5rem 1rem;
 }
 
-.part-header h4, .quantity {
+.part-header h4, .part-header h5, .quantity {
   margin: 0;
 }
 
@@ -262,6 +262,29 @@ dd {
   font-family: ui-monospace, monospace;
   font-size: 0.85rem;
   overflow-wrap: anywhere;
+}
+
+.supplier-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.mutation-success {
+  padding: 1rem;
+  border-left: 3px solid #254b37;
+  background: #e3ece6;
+}
+
+.connected-toy {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid #ccd8d0;
+}
+
+.part-header h5 {
+  font-size: 1rem;
 }
 
 .error-state {
