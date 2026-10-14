@@ -444,11 +444,14 @@ def test_openapi_declares_read_response_contracts(client):
         "/toys/detail",
         "/suppliers",
         "/suppliers/detail",
+        "/suppliers/parts",
         "/suppliers/flag",
     }
     for path, names in [("/toys", {"finisher_id"}), ("/toys/detail", {"finisher_id", "toy_id"})]:
         parameters = schema["paths"][path]["get"]["parameters"]
-        assert {parameter["name"] for parameter in parameters} == names
-        assert all(parameter["in"] == "query" and parameter["required"] for parameter in parameters)
+        pagination = {"page", "page_size"} if path == "/toys" else {"offset", "limit"}
+        assert {parameter["name"] for parameter in parameters} == names | pagination
+        assert {p["name"] for p in parameters if p["required"]} == names
+        assert all(parameter["in"] == "query" for parameter in parameters)
     status_schema = schema["components"]["schemas"]["ToyListing"]["properties"]["exposure_status"]
     assert status_schema["enum"] == [AFFECTED, UNFLAGGED]

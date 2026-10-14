@@ -46,7 +46,7 @@ beforeEach(() => {
   handlers.set(toysBUrl, () => json(catalogB))
   handlers.set(detailAUrl, () => json(detailA))
   handlers.set(detailBUrl, () => json(detailB))
-  handlers.set('/api/suppliers?finisher_id=FIN-A', () => json({ finisher: finisherA, suppliers: [] }))
+  handlers.set('/api/suppliers?finisher_id=FIN-A', () => json({ finisher: finisherA, suppliers: [], total_suppliers: 0 }))
   fetchMock.mockReset()
   fetchMock.mockImplementation(async (url) => {
     const handler = handlers.get(url)

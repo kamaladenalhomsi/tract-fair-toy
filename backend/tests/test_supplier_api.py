@@ -102,6 +102,15 @@ def detail(client, supplier="SUP-A", finisher="FIN-A"):
     return response.json()
 
 
+def parts(client, supplier="SUP-A", finisher="FIN-A", **pagination):
+    response = client.get(
+        "/suppliers/parts",
+        params={"finisher_id": finisher, "supplier_id": supplier, **pagination},
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
 def mutate(client, method="PUT", supplier="SUP-A", finisher="FIN-A"):
     response = client.request(
         method, "/suppliers/flag", params={"finisher_id": finisher, "supplier_id": supplier}
@@ -131,6 +140,7 @@ def test_connected_supplier_list_before_flagging(client, supplier_engine):
     result = listing(client)
     assert result == {
         "finisher": {"finisher_id": "FIN-A", "finisher_name": "Finisher A", "hq_country": "US"},
+        "total_suppliers": 2,
         "suppliers": [
             {
                 "supplier_id": "SUP-A",
@@ -168,7 +178,10 @@ def test_detail_distinct_toys_complete_paths_and_uncertainty_before_flagging(cli
     }
     assert result["connected_toys_count"] == len(result["toys"]) == 2
     assert [toy["toy_id"] for toy in result["toys"]] == ["TOY-A", "TOY-SHARED"]
-    only_a, shared = result["toys"]
+    trace = parts(client)
+    assert trace["total_parts"] == 3
+    assert [toy["toy_id"] for toy in trace["toys"]] == [toy["toy_id"] for toy in result["toys"]]
+    only_a, shared = trace["toys"]
     assert shared["retail_price_usd"] == "19.99"
     assert shared["units_per_year"] == 100
     assert shared["exposure_status"] == UNFLAGGED
@@ -205,9 +218,9 @@ def test_detail_distinct_toys_complete_paths_and_uncertainty_before_flagging(cli
     assert other["connected_toys_count"] == 1
     assert other["toys"][0]["retail_price_usd"] == "24.50"
     assert other["toys"][0]["units_per_year"] == 200
-    assert other["toys"][0]["parts"] == shared["parts"]
-    b = detail(client, supplier="SUP-B")
-    assert b["connected_toys_count"] == 1
+    assert parts(client, finisher="FIN-B")["toys"][0]["parts"] == shared["parts"]
+    b = parts(client, supplier="SUP-B")
+    assert detail(client, supplier="SUP-B")["connected_toys_count"] == 1
     assert len(b["toys"][0]["parts"]) == 1
     assert b["toys"][0]["parts"][0]["sources"][0]["factory"]["factory_id"] == "FAC-B"
 
@@ -279,7 +292,12 @@ def test_concurrent_repeat_flagging_creates_one_pair(client, supplier_engine):
 
 @pytest.mark.parametrize(
     "method,path",
-    [("GET", "/suppliers/detail"), ("PUT", "/suppliers/flag"), ("DELETE", "/suppliers/flag")],
+    [
+        ("GET", "/suppliers/detail"),
+        ("GET", "/suppliers/parts"),
+        ("PUT", "/suppliers/flag"),
+        ("DELETE", "/suppliers/flag"),
+    ],
 )
 @pytest.mark.parametrize(
     "finisher,supplier,message",
@@ -500,11 +518,18 @@ def test_set_based_query_counts_remain_fixed_as_catalog_grows(client, supplier_e
         with count_queries(supplier_engine) as queries:
             result = listing(client)
         assert len(queries) == 2
-        assert len(result["suppliers"]) == (32 if extra else 2)
+        assert len(result["suppliers"]) == (10 if extra else 2)
+        assert result["total_suppliers"] == (32 if extra else 2)
         with count_queries(supplier_engine) as queries:
             result = detail(client)
         assert len(queries) == 3
-        assert result["connected_toys_count"] == len(result["toys"]) == (32 if extra else 2)
+        assert result["connected_toys_count"] == (32 if extra else 2)
+        assert len(result["toys"]) == (10 if extra else 2)
+        with count_queries(supplier_engine) as queries:
+            trace = parts(client)
+        assert len(queries) == 3
+        assert trace["total_parts"] == (33 if extra else 3)
+        assert sum(len(toy["parts"]) for toy in trace["toys"]) == (10 if extra else 3)
         for method in ["PUT", "DELETE"]:
             with count_queries(supplier_engine) as queries:
                 mutate(client, method)
@@ -516,6 +541,7 @@ def test_openapi_response_contracts(client):
     for path, method, model, names in [
         ("/suppliers", "get", "SupplierCatalog", {"finisher_id"}),
         ("/suppliers/detail", "get", "SupplierDetail", {"finisher_id", "supplier_id"}),
+        ("/suppliers/parts", "get", "SupplierParts", {"finisher_id", "supplier_id"}),
         ("/suppliers/flag", "put", "SupplierFlag", {"finisher_id", "supplier_id"}),
         ("/suppliers/flag", "delete", "SupplierFlag", {"finisher_id", "supplier_id"}),
     ]:
@@ -523,8 +549,14 @@ def test_openapi_response_contracts(client):
         assert operation["responses"]["200"]["content"]["application/json"]["schema"] == {
             "$ref": f"#/components/schemas/{model}"
         }
-        assert {p["name"] for p in operation["parameters"]} == names
-        assert all(p["in"] == "query" and p["required"] for p in operation["parameters"])
+        pagination = set()
+        if method == "get":
+            pagination = (
+                {"offset", "limit"} if path == "/suppliers/parts" else {"page", "page_size"}
+            )
+        assert {p["name"] for p in operation["parameters"]} == names | pagination
+        assert {p["name"] for p in operation["parameters"] if p["required"]} == names
+        assert all(p["in"] == "query" for p in operation["parameters"])
     assert set(schema["paths"]["/suppliers/flag"]) == {"put", "delete"}
     assert (
         "connected_toys_count" in schema["components"]["schemas"]["SupplierListing"]["properties"]

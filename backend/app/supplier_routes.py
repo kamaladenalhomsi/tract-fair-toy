@@ -1,13 +1,19 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import SQLAlchemyError
 
 from app import catalog, suppliers
 from app.catalog_models import Finisher
 from app.database import get_connection
-from app.supplier_models import SupplierCatalog, SupplierDetail, SupplierFlag, SupplierListing
+from app.supplier_models import (
+    SupplierCatalog,
+    SupplierDetail,
+    SupplierFlag,
+    SupplierListing,
+    SupplierParts,
+)
 
 router = APIRouter()
 DatabaseConnection = Annotated[Connection, Depends(get_connection)]
@@ -30,17 +36,41 @@ def require_supplier(
 
 
 @router.get("/suppliers", response_model=SupplierCatalog)
-def list_suppliers(finisher_id: str, connection: DatabaseConnection) -> SupplierCatalog:
-    return suppliers.list_suppliers(connection, require_finisher(connection, finisher_id))
+def list_suppliers(
+    finisher_id: str,
+    connection: DatabaseConnection,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 10,
+) -> SupplierCatalog:
+    return suppliers.list_suppliers(
+        connection, require_finisher(connection, finisher_id), page, page_size
+    )
 
 
 @router.get("/suppliers/detail", response_model=SupplierDetail)
 def get_supplier(
-    finisher_id: str, supplier_id: str, connection: DatabaseConnection
+    finisher_id: str,
+    supplier_id: str,
+    connection: DatabaseConnection,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 10,
 ) -> SupplierDetail:
     finisher = require_finisher(connection, finisher_id)
     supplier = require_supplier(connection, finisher, supplier_id)
-    return suppliers.get_supplier_detail(connection, finisher, supplier)
+    return suppliers.get_supplier_detail(connection, finisher, supplier, page, page_size)
+
+
+@router.get("/suppliers/parts", response_model=SupplierParts)
+def get_supplier_parts(
+    finisher_id: str,
+    supplier_id: str,
+    connection: DatabaseConnection,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 10,
+) -> SupplierParts:
+    finisher = require_finisher(connection, finisher_id)
+    supplier = require_supplier(connection, finisher, supplier_id)
+    return suppliers.get_supplier_parts(connection, finisher, supplier, offset, limit)
 
 
 @router.put("/suppliers/flag", response_model=SupplierFlag)

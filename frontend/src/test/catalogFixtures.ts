@@ -34,6 +34,7 @@ export const detailA: ToyDetail = {
   retail_price_usd: '24.50',
   units_per_year: 1200,
   exposure_status: 'Potentially affected',
+  total_parts: 2,
   parts: [
     {
       part_id: 'PART-1', part_name: 'Wheel', quantity: 7,

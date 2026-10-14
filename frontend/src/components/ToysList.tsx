@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { Pagination } from './Pagination'
 import { useQuery } from '@tanstack/react-query'
 import { toysQuery } from '../api/catalog'
 import { QueryError } from './QueryError'
@@ -9,7 +11,8 @@ type Props = {
 }
 
 export function ToysList({ finisherId, onSelect }: Props) {
-  const query = useQuery(toysQuery(finisherId))
+  const [page, setPage] = useState(1)
+  const query = useQuery(toysQuery(finisherId, page))
 
   return (
     <section aria-labelledby="toys-heading">
@@ -61,6 +64,7 @@ export function ToysList({ finisherId, onSelect }: Props) {
               </table>
             </div>
           )}
+          <Pagination page={page} total={query.data.total_toys} onPageChange={setPage} disabled={query.isFetching} label="Toys pagination" />
         </>
       )}
     </section>

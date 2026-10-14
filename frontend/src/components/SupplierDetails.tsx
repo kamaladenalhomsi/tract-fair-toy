@@ -1,6 +1,8 @@
-import { useEffect, useRef } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { setSupplierFlag, supplierDetailQuery } from '../api/suppliers'
+import { useEffect, useRef, useState } from 'react'
+import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { setSupplierFlag, supplierDetailQuery, supplierPartsQuery } from '../api/suppliers'
+import type { SupplierParts } from '../api/suppliers'
+import { Pagination } from './Pagination'
 import { ExposureBadge } from './ExposureBadge'
 import { QueryError } from './QueryError'
 
@@ -11,7 +13,15 @@ type Props = {
 }
 
 export function SupplierDetails({ finisherId, supplierId, onBack }: Props) {
-  const query = useQuery(supplierDetailQuery(finisherId, supplierId))
+  const [page, setPage] = useState(1)
+  const query = useQuery({ ...supplierDetailQuery(finisherId, supplierId, page), placeholderData: keepPreviousData })
+  const partsQuery = useInfiniteQuery({ ...supplierPartsQuery(finisherId, supplierId), enabled: !!query.data })
+  const connected = new Map<string, SupplierParts['toys'][number]>()
+  for (const toy of partsQuery.data?.pages.flatMap((page) => page.toys) ?? []) {
+    const existing = connected.get(toy.toy_id)
+    connected.set(toy.toy_id, { ...toy, parts: [...(existing?.parts ?? []), ...toy.parts] })
+  }
+  const loadedParts = [...connected.values()].reduce((count, toy) => count + toy.parts.length, 0)
   const client = useQueryClient()
   const mutation = useMutation({
     mutationFn: (isFlagged: boolean) => setSupplierFlag(finisherId, supplierId, isFlagged),
@@ -74,11 +84,28 @@ export function SupplierDetails({ finisherId, supplierId, onBack }: Props) {
             Only paths to this supplier are shown. A toy remains potentially affected while any flagged supplier path remains.</p>
           <p className="muted">Path: Finisher → Toy → Part → Factory → Supplier. Quantities are per toy, not per source.</p>
           {query.data.toys.length === 0 && <p role="status">No connected toys for this supplier in this Finisher’s catalog.</p>}
-          {query.data.toys.map((toy) => (
+          {query.data.toys.length > 0 && <div className="table-scroll">
+            <table>
+              <caption className="sr-only">Connected toys</caption>
+              <thead><tr><th scope="col">Toy</th><th scope="col">Exposure status</th><th scope="col">Retail price (USD)</th><th scope="col">Units per year</th></tr></thead>
+              <tbody>{query.data.toys.map((toy) => <tr key={toy.toy_id}>
+                <th scope="row">{toy.toy_name} <span className="record-id">{toy.toy_id}</span></th>
+                <td><ExposureBadge status={toy.exposure_status} /></td>
+                <td>{toy.retail_price_usd}</td><td>{toy.units_per_year.toLocaleString()}</td>
+              </tr>)}</tbody>
+            </table>
+          </div>}
+          <Pagination page={page} total={query.data.connected_toys_count} onPageChange={setPage} disabled={query.isFetching || mutation.isPending} label="Connected toys pagination" />
+          <h3>Connecting parts & factories</h3>
+          {partsQuery.isPending && <p role="status">Loading supplier parts…</p>}
+          {partsQuery.isError && !partsQuery.isFetchNextPageError && <QueryError message="Could not load supplier parts." retry={() => { void partsQuery.refetch() }} isFetching={partsQuery.isFetching} />}
+          {partsQuery.data && (!partsQuery.isError || partsQuery.isFetchNextPageError) && <>
+          <p>{partsQuery.data.pages[0].total_parts} toy–part connections total · {loadedParts} loaded</p>
+          {loadedParts === 0 && <p role="status">No connecting parts.</p>}
+          {[...connected.values()].map((toy) => (
             <article className="connected-toy" key={toy.toy_id} aria-labelledby={`connected-toy-${encodeURIComponent(toy.toy_id)}`}>
               <h4 id={`connected-toy-${encodeURIComponent(toy.toy_id)}`}>{toy.toy_name}</h4>
               <p className="record-id">{toy.toy_id}</p>
-              <ExposureBadge status={toy.exposure_status} />
               {toy.parts.map((part) => (
                 <div className="part-card" key={part.part_id}>
                   <header className="part-header">
@@ -122,6 +149,11 @@ export function SupplierDetails({ finisherId, supplierId, onBack }: Props) {
               ))}
             </article>
           ))}
+          {partsQuery.isFetchNextPageError && <p role="alert">Could not load more parts. Try again.</p>}
+          {partsQuery.hasNextPage && <button type="button" disabled={partsQuery.isFetching || mutation.isPending} onClick={() => { void partsQuery.fetchNextPage() }}>
+            {partsQuery.isFetchingNextPage ? 'Loading more…' : 'Load more'}
+          </button>}
+          </>}
         </>
       )}
     </section>

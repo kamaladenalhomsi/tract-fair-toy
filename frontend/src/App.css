@@ -111,6 +111,11 @@ button:disabled {
   padding: 0.85rem 1.5rem;
 }
 
+.workspace-tabs button:hover {
+    background: #254b37;
+    color: white;
+}
+
 .workspace-tabs [aria-selected="true"] {
   background: #254b37;
   color: #fff;
@@ -262,6 +267,20 @@ dd {
   font-family: ui-monospace, monospace;
   font-size: 0.85rem;
   overflow-wrap: anywhere;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+
+.pagination [aria-current="page"] {
+  background: #254b37;
+  color: #fff;
+  opacity: 1;
 }
 
 .supplier-actions {

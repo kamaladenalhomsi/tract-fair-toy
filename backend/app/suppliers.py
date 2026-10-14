@@ -2,8 +2,14 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
 from app.catalog import SOURCE_UNCERTAINTY
-from app.catalog_models import BomPart, Factory, Finisher, PartSource, Supplier
-from app.supplier_models import ConnectedToy, SupplierCatalog, SupplierDetail, SupplierListing
+from app.catalog_models import BomPart, Factory, Finisher, PartSource, Supplier, ToyListing
+from app.supplier_models import (
+    ConnectedToy,
+    SupplierCatalog,
+    SupplierDetail,
+    SupplierListing,
+    SupplierParts,
+)
 
 SUPPLIER_LISTINGS = """
     SELECT s.supplier_id, s.supplier_name, s.hq_country,
@@ -24,12 +30,35 @@ SUPPLIER_GROUPING = """
 """
 
 
-def list_suppliers(connection: Connection, finisher: Finisher) -> SupplierCatalog:
-    rows = connection.execute(
-        text(SUPPLIER_LISTINGS + SUPPLIER_GROUPING),
-        {"finisher_id": finisher.finisher_id},
-    ).mappings()
-    return SupplierCatalog(finisher=finisher, suppliers=[SupplierListing(**row) for row in rows])
+def list_suppliers(
+    connection: Connection, finisher: Finisher, page: int = 1, page_size: int = 10
+) -> SupplierCatalog:
+    rows = (
+        connection.execute(
+            text(
+                "WITH listings AS ("
+                + SUPPLIER_LISTINGS
+                + SUPPLIER_GROUPING
+                + """
+        ), summary AS (SELECT count(*) AS total_suppliers FROM listings),
+        page AS (SELECT * FROM listings ORDER BY supplier_id LIMIT :limit OFFSET :offset)
+        SELECT summary.*, page.* FROM summary LEFT JOIN page ON true ORDER BY page.supplier_id
+        """
+            ),
+            {
+                "finisher_id": finisher.finisher_id,
+                "limit": page_size,
+                "offset": (page - 1) * page_size,
+            },
+        )
+        .mappings()
+        .all()
+    )
+    return SupplierCatalog(
+        finisher=finisher,
+        total_suppliers=rows[0]["total_suppliers"],
+        suppliers=[SupplierListing(**row) for row in rows if row["supplier_id"] is not None],
+    )
 
 
 def get_supplier(
@@ -47,25 +76,75 @@ def get_supplier(
 
 
 def get_supplier_detail(
-    connection: Connection, finisher: Finisher, supplier: SupplierListing
+    connection: Connection,
+    finisher: Finisher,
+    supplier: SupplierListing,
+    page: int = 1,
+    page_size: int = 10,
 ) -> SupplierDetail:
     rows = connection.execute(
         text("""
+        SELECT t.toy_id, t.toy_name, ft.retail_price_usd, ft.units_per_year,
+               CASE WHEN EXISTS (
+                   SELECT 1 FROM bom_items b
+                   JOIN part_sources ps ON ps.part_id = b.part_id
+                   JOIN factories f ON f.factory_id = ps.factory_id
+                   JOIN finisher_supplier_flags flags ON flags.supplier_id = f.supplier_id
+                     AND flags.finisher_id = ft.finisher_id
+                   WHERE b.toy_id = ft.toy_id
+               ) THEN 'Potentially affected' ELSE 'No flagged supplier found' END AS exposure_status
+        FROM finisher_toys ft JOIN toys t ON t.toy_id = ft.toy_id
+        WHERE ft.finisher_id = :finisher_id AND EXISTS (
+            SELECT 1 FROM bom_items b
+            JOIN part_sources ps ON ps.part_id = b.part_id
+            JOIN factories f ON f.factory_id = ps.factory_id
+            WHERE b.toy_id = ft.toy_id AND f.supplier_id = :supplier_id
+        )
+        ORDER BY t.toy_id LIMIT :limit OFFSET :offset
+        """),
+        {
+            "finisher_id": finisher.finisher_id,
+            "supplier_id": supplier.supplier_id,
+            "limit": page_size,
+            "offset": (page - 1) * page_size,
+        },
+    ).mappings()
+    return SupplierDetail(
+        finisher=finisher,
+        supplier=Supplier(**supplier.model_dump()),
+        connected_toys_count=supplier.connected_toys_count,
+        toys=[ToyListing(**row) for row in rows],
+    )
+
+
+def get_supplier_parts(
+    connection: Connection,
+    finisher: Finisher,
+    supplier: SupplierListing,
+    offset: int = 0,
+    limit: int = 10,
+) -> SupplierParts:
+    rows = (
+        connection.execute(
+            text("""
         WITH connected_parts AS (
-            SELECT DISTINCT b.part_id
+            SELECT DISTINCT b.toy_id, b.part_id
             FROM finisher_toys ft
             JOIN bom_items b ON b.toy_id = ft.toy_id
             JOIN part_sources ps ON ps.part_id = b.part_id
             JOIN factories f ON f.factory_id = ps.factory_id
             WHERE ft.finisher_id = :finisher_id AND f.supplier_id = :supplier_id
+        ), page AS (
+            SELECT * FROM connected_parts ORDER BY toy_id, part_id LIMIT :limit OFFSET :offset
         ), supplier_counts AS (
             SELECT ps.part_id, count(DISTINCT f.supplier_id) AS distinct_supplier_count
-            FROM connected_parts cp
+            FROM page cp
             JOIN part_sources ps ON ps.part_id = cp.part_id
             JOIN factories f ON f.factory_id = ps.factory_id
             GROUP BY ps.part_id
         )
         SELECT t.toy_id, t.toy_name, ft.retail_price_usd, ft.units_per_year,
+               summary.total_parts,
                b.part_id, p.part_name, b.quantity, sc.distinct_supplier_count,
                ps.unit_cost_usd, f.factory_id, f.factory_name,
                f.address_line, f.city, f.country,
@@ -81,23 +160,34 @@ def get_supplier_detail(
                    WHERE exposure_bom.toy_id = ft.toy_id
                ) THEN 'Potentially affected'
                  ELSE 'No flagged supplier found' END AS exposure_status
-        FROM finisher_toys ft
-        JOIN toys t ON t.toy_id = ft.toy_id
-        JOIN bom_items b ON b.toy_id = t.toy_id
-        JOIN parts p ON p.part_id = b.part_id
-        JOIN supplier_counts sc ON sc.part_id = b.part_id
-        JOIN part_sources ps ON ps.part_id = b.part_id
-        JOIN factories f ON f.factory_id = ps.factory_id
-        WHERE ft.finisher_id = :finisher_id AND f.supplier_id = :supplier_id
+        FROM (SELECT count(*) AS total_parts FROM connected_parts) summary
+        LEFT JOIN page ON true
+        LEFT JOIN finisher_toys ft ON ft.toy_id = page.toy_id AND ft.finisher_id = :finisher_id
+        LEFT JOIN toys t ON t.toy_id = ft.toy_id
+        LEFT JOIN bom_items b ON b.toy_id = page.toy_id AND b.part_id = page.part_id
+        LEFT JOIN parts p ON p.part_id = b.part_id
+        LEFT JOIN supplier_counts sc ON sc.part_id = b.part_id
+        LEFT JOIN (part_sources ps JOIN factories f ON f.factory_id = ps.factory_id
+                   AND f.supplier_id = :supplier_id) ON ps.part_id = b.part_id
         ORDER BY t.toy_id, b.part_id, f.factory_id
     """),
-        {"finisher_id": finisher.finisher_id, "supplier_id": supplier.supplier_id},
-    ).mappings()
+            {
+                "finisher_id": finisher.finisher_id,
+                "supplier_id": supplier.supplier_id,
+                "offset": offset,
+                "limit": limit,
+            },
+        )
+        .mappings()
+        .all()
+    )
     toys: dict[str, ConnectedToy] = {}
     parts: dict[tuple[str, str], BomPart] = {}
     selected_supplier = Supplier(**supplier.model_dump())
     for row in rows:
         toy_id = row["toy_id"]
+        if toy_id is None:
+            continue
         if toy_id not in toys:
             toys[toy_id] = ConnectedToy(**row, parts=[])
         part_key = (toy_id, row["part_id"])
@@ -118,12 +208,7 @@ def get_supplier_detail(
                 supplier=selected_supplier,
             )
         )
-    return SupplierDetail(
-        finisher=finisher,
-        supplier=selected_supplier,
-        connected_toys_count=len(toys),
-        toys=list(toys.values()),
-    )
+    return SupplierParts(toys=list(toys.values()), total_parts=rows[0]["total_parts"])
 
 
 def flag_supplier(connection: Connection, finisher_id: str, supplier_id: str) -> None:

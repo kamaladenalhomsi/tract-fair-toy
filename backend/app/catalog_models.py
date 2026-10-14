@@ -64,3 +64,4 @@ class BomPart(BaseModel):
 class ToyDetail(ToyListing):
     finisher: Finisher
     parts: list[BomPart]
+    total_parts: int
