@@ -437,7 +437,15 @@ def test_openapi_declares_read_response_contracts(client):
         assert response["content"]["application/json"]["schema"] == {
             "$ref": f"#/components/schemas/{model}",
         }
-    assert set(schema["paths"]) == {"/health", "/finishers", "/toys", "/toys/detail"}
+    assert set(schema["paths"]) == {
+        "/health",
+        "/finishers",
+        "/toys",
+        "/toys/detail",
+        "/suppliers",
+        "/suppliers/detail",
+        "/suppliers/flag",
+    }
     for path, names in [("/toys", {"finisher_id"}), ("/toys/detail", {"finisher_id", "toy_id"})]:
         parameters = schema["paths"][path]["get"]["parameters"]
         assert {parameter["name"] for parameter in parameters} == names
