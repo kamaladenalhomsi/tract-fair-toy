@@ -1,6 +1,6 @@
 # FairToy
 
-FairToy is a supply-chain traceability application for identifying potential child-labor exposure in toy manufacturing. This repository contains the application foundation, normalized PostgreSQL schema, transactional CSV import pipeline, and Phase 4 toy catalog/traceability read APIs.
+FairToy is a supply-chain traceability application for identifying potential child-labor exposure in toy manufacturing. This repository contains the application foundation, normalized PostgreSQL schema, transactional CSV import pipeline, toy catalog/traceability APIs, and Phase 5 supplier management APIs.
 
 ## Prerequisites
 
@@ -188,9 +188,70 @@ outside the selected catalog return
 
 Pydantic response contracts are published at <http://localhost:8000/docs> and
 `/openapi.json`. Finisher selection uses one SQL statement; successful catalog and
-detail reads each use two, independent of catalog or trace size. Supplier-specific
-reads and flag mutation endpoints are not implemented yet; integration tests seed
-flags directly in PostgreSQL.
+detail reads each use two, independent of catalog or trace size.
+
+## Supplier management API
+
+All endpoints require `finisher_id`; detail and mutations also require
+`supplier_id`. IDs are exact query parameters, encoded like the toy API above.
+Mutations have no request body.
+
+| Endpoint | Response contract (`200`) |
+|---|---|
+| `GET /suppliers?finisher_id=...` | `{finisher, suppliers}` |
+| `GET /suppliers/detail?finisher_id=...&supplier_id=...` | `{finisher, supplier, connected_toys_count, toys}` |
+| `PUT /suppliers/flag?finisher_id=...&supplier_id=...` | `{finisher_id, supplier_id, is_flagged: true}` |
+| `DELETE /suppliers/flag?finisher_id=...&supplier_id=...` | `{finisher_id, supplier_id, is_flagged: false}` |
+
+Supplier lists include **only suppliers connected to toys in the selected
+Finisher's catalog**, even when other suppliers have stored flags. Each entry
+contains `supplier_id`, `supplier_name`, `hq_country`, `is_flagged`, and
+`connected_toys_count`. Flags always belong to the selected Finisher. Empty
+catalogs return `suppliers: []`.
+
+Detail `supplier` contains the same identity and flag fields, with the count at
+the response's top level. `toys` contains each distinct connected toy once,
+**before or after flagging**. Each toy contains the toy listing fields described
+above, including Finisher-specific price/volume and live `exposure_status`, plus
+`parts`. Parts use the toy detail contract, but include only parts and factory
+sources connecting that toy to the selected supplier. Every matching factory
+path is retained; BOM quantity appears once per part, not once per source.
+`distinct_supplier_count` and `source_uncertainty` still consider **all** sources
+for that part, including suppliers not shown in this filtered detail. Toy exposure
+also considers all supplier paths, not just the selected supplier's paths.
+
+Counts mean **connected toys**, not **newly affected toys**. No newly-affected
+preview is calculated. Lists are ordered by supplier ID; detail toys, parts, and
+sources are ordered by toy, part, and factory IDs respectively. No pagination is
+applied. Money remains decimal strings, and missing factory city/address remain
+`null`. Supplier list reads use two SQL statements, detail reads three, and
+successful mutations three plus transaction commit, independent of result size.
+
+`PUT` inserts the Finisher–supplier flag if absent. Repeated flagging succeeds
+without adding rows or changing the original `flagged_at`. `DELETE` removes only
+that pair; repeating an unflag also succeeds. Both operations commit before
+returning success. Flags persist in PostgreSQL across application restarts.
+Subsequent supplier and toy reads reflect live flag state; unflagging one supplier
+does not clear exposure caused by another flagged supplier. Other Finishers'
+flags are never changed. Concurrent-edit conflict resolution is not provided.
+
+Missing parameters return `422`. Unknown Finishers return
+`404 {"detail":"Finisher not found"}`. Missing suppliers **or suppliers outside the
+selected Finisher's catalog** return
+`404 {"detail":"Supplier not found in Finisher catalog"}` for both detail and
+mutations. Database errors during mutation transactions, including commit errors,
+return `503 {"detail":"Supplier flag update failed"}` rather than success. Other
+server/connection failures may return `500`; callers must treat non-2xx responses
+as failures, not confirmed updates.
+
+Example (substitute imported IDs):
+
+```bash
+curl --get 'http://localhost:8000/suppliers/detail' \
+  --data-urlencode 'finisher_id=FIN-001' --data-urlencode 'supplier_id=SUP-001'
+curl -X PUT 'http://localhost:8000/suppliers/flag?finisher_id=FIN-001&supplier_id=SUP-001'
+curl -X DELETE 'http://localhost:8000/suppliers/flag?finisher_id=FIN-001&supplier_id=SUP-001'
+```
 
 ## Checks
 
@@ -213,7 +274,7 @@ npm run build
 cd ..
 ```
 
-Schema and catalog API tests run migrations in uniquely named, empty PostgreSQL schemas and roll back afterward. Import tests use separate uniquely named schemas to exercise real commits and concurrent connections, then drop those test schemas. Neither suite migrates or clears application tables. The configured database user needs permission to create schemas (the default Compose user has this permission). A database connection failure fails tests rather than skipping them.
+Schema and catalog API tests run migrations in uniquely named, empty PostgreSQL schemas and roll back afterward. Import and supplier API tests use separate uniquely named schemas to exercise real commits and concurrent connections, then drop those test schemas. These suites do not migrate or clear application tables. The configured database user needs permission to create schemas (the default Compose user has this permission). A database connection failure fails tests rather than skipping them.
 
 Backend coverage includes empty-schema upgrade and downgrade/re-upgrade, exact columns/types/keys/indexes, invalid foreign keys, duplicate keys, required fields, numeric constraints, nullable factory fields, provenance, and Finisher-scoped flag relationships. CSV mapping tests read the six checked-in files. Import tests additionally load the complete dataset, reconcile every source attribute, and cover validation, normalization, rollback, receipts, key reuse, failed-key retry, concurrent same/different-key imports, and the installed CLI. Minimal valid inputs live in `backend/tests/fixtures/imports/valid/`; the invalid `parts.csv` overlays that set to demonstrate supplier/factory disagreement. Other invalid cases are generated by parameterized tests.
 
@@ -223,6 +284,16 @@ supplier uncertainty, quantities and affected counts, empty/missing resources,
 response contracts, reserved-character IDs, required query parameters, and fixed
 query counts as catalog size increases. Run them alone
 from `backend` with `pytest tests/test_catalog_api.py`.
+
+Supplier API integration tests cover pre-flag discovery, distinct connected-toy
+counts, complete connecting paths, globally determined source uncertainty,
+shared listings, live exposure, Finisher isolation, repeated/concurrent flagging,
+repeated unflagging, invalid resources/parameters, exact reserved-character IDs,
+OpenAPI contracts, and fixed query counts as toy/supplier counts grow. Real
+PostgreSQL statement and deferred-commit failures verify rollback and non-success
+responses. A fresh application subprocess verifies persisted flags and committed
+unflags across application instances. Run them with
+`pytest tests/test_supplier_api.py`.
 
 ## CSV-to-schema mapping
 
@@ -245,7 +316,7 @@ Copy `.env.example` to `.env`. `DATABASE_URL` configures SQLAlchemy and Alembic.
 
 If port `5432` is already occupied, change `POSTGRES_PORT` and the port in `DATABASE_URL` together. If ports `8000` or `5173` are occupied, stop the conflicting process before following the documented commands.
 
-## Current scope (Phases 1–4)
+## Current scope (Phases 1–5)
 
 Included:
 
@@ -256,12 +327,12 @@ Included:
 - Atomic local CSV import with validation, normalization, receipts, and concurrency-safe idempotency
 - Full-dataset and minimal-fixture import tests
 - Finisher selection, scoped toy catalog, and complete toy trace read APIs
-- Explicit response contracts and PostgreSQL-backed exposure/query-count integration tests
+- Finisher-scoped supplier list/detail and persistent, idempotent flag/unflag APIs
+- Explicit response contracts and PostgreSQL-backed exposure/query-count/mutation integration tests
 - React/TypeScript frontend with TanStack Query
 - Docker Compose PostgreSQL service
 - Backend and frontend smoke tests
 
 Not included until later phases:
 
-- Supplier-specific APIs and flag mutation endpoints
 - Finished catalog, supplier, or flagging screens
